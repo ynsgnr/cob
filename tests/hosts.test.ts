@@ -41,19 +41,20 @@ test("public host: only GET video pages, media, old links and the health check",
   const p = both.port();
   const page = await call(p, PUB, "GET", `/k/${id}`);
   assert.equal(page.status, 200);
-  assert.doesNotMatch(page.body, /Retry|All saved/); // no buttons that lead to a 404
+  assert.doesNotMatch(page.body, /Retry|Re-transcribe|Delete|All saved/); // no buttons that lead to a 404
   assert.match(page.body, /hello world/);
   assert.equal((await call(p, PUB, "GET", `/media/${id}`)).status, 200);
   assert.equal((await call(p, PUB, "GET", `/r/${id}`)).status, 308);
   assert.equal((await call(p, `${PUB}:8443`, "GET", "/healthz")).status, 200); // a port in Host is ignored
-  for (const [method, path] of [["GET", "/"], ["GET", "/?q=hello"], ["GET", `/api/reels/${id}`], ["POST", "/submit"], ["POST", "/api/reels"], ["POST", `/k/${id}/retry`], ["GET", `/k/${id}/retry`], ["GET", "/robots.txt"], ["GET", `/k/${id}/`]] as const)
+  for (const [method, path] of [["GET", "/"], ["GET", "/?q=hello"], ["GET", `/api/reels/${id}`], ["POST", "/submit"], ["POST", "/api/reels"], ["POST", `/k/${id}/retry`], ["POST", `/k/${id}/retranscribe`], ["POST", `/k/${id}/delete`], ["GET", `/k/${id}/retry`], ["GET", "/robots.txt"], ["GET", `/k/${id}/`]] as const)
     assert.equal((await call(p, PUB, method, path, { "content-type": "application/json" })).status, 404, `${method} ${path}`);
 });
 
 test("internal host: everything works, and unknown hosts are treated as public when INTERNAL_HOST is set", async () => {
   const p = both.port();
   const page = await call(p, INT, "GET", `/k/${id}`);
-  assert.match(page.body, /Retry/);
+  assert.match(page.body, /Re-transcribe/);
+  assert.match(page.body, /Delete permanently/);
   assert.match(page.body, /All saved/);
   assert.equal((await call(p, INT, "GET", "/")).status, 200);
   assert.equal((await call(p, INT, "GET", `/api/reels/${id}`)).status, 200);

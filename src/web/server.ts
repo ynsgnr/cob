@@ -4,7 +4,9 @@ import { stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { extname } from "node:path";
 import { classify } from "../providers/index.ts";
-import { countQueued, getReel, insertOrGet, listReels, retry } from "../db/reels.ts";
+import { rm } from "node:fs/promises";
+import { ignoreLinksOf } from "../db/karakeep.ts";
+import { countQueued, deleteReel, getReel, insertOrGet, listReels, retranscribe, retry } from "../db/reels.ts";
 import { accessFor } from "../config.ts";
 import { mediaPath, type Deps } from "../worker/pipeline.ts";
 import { indexPage, layout, notFoundPage, reelPage } from "./views.ts";
@@ -116,12 +118,25 @@ async function handle(deps: Deps, req: IncomingMessage, res: ServerResponse) {
   const legacy = /^\/r\/([A-Za-z0-9_-]+)$/.exec(path);
   if (req.method === "GET" && legacy) return send(res, 308, "", "text/plain", { Location: `/k/${legacy[1]}` });
 
-  const m = /^\/(k|media|api\/reels)\/([A-Za-z0-9_-]+)(\/retry)?$/.exec(path);
+  const m = /^\/(k|media|api\/reels)\/([A-Za-z0-9_-]+)(\/(?:retry|retranscribe|delete))?$/.exec(path);
   if (m) {
     const [, kind, id, tail] = m as unknown as [string, string, string, string | undefined];
     if (post && kind === "k" && tail) {
       if (!sameOrigin(req)) return forbidden(res);
-      retry(deps.db, id);
+      if (tail === "/delete") {
+        const reel = getReel(deps.db, id);
+        if (reel?.status === "running") return send(res, 409, layout("Busy", `<h1>Still processing</h1><p>Try again when it has finished.</p><p><a href="/k/${id}">Back</a></p>`));
+        if (reel) {
+          // Only this reel's own folder. Resolved first, so a bad row throws before anything is deleted.
+          const dir = mediaPath(deps.config, `${reel.platform}/${reel.externalId}`);
+          deleteReel(deps.db, id);
+          ignoreLinksOf(deps.db, id);
+          await rm(dir, { recursive: true, force: true });
+        }
+        return redirect(res, "/");
+      }
+      if (tail === "/retranscribe") retranscribe(deps.db, id);
+      else retry(deps.db, id);
       return redirect(res, `/k/${id}`);
     }
     if (req.method === "GET" && !tail) {

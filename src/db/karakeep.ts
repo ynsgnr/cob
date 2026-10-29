@@ -18,5 +18,10 @@ export function setLinkState(db: Db, bookmarkId: string, state: LinkState, newBo
   db.prepare("UPDATE karakeep_links SET state = ?, new_bookmark_id = COALESCE(?, new_bookmark_id) WHERE bookmark_id = ?").run(state, newBookmarkId ?? null, bookmarkId);
 }
 
+// A deleted reel must not be queued again by the same bookmark, nor leave a link waiting for it forever.
+export function ignoreLinksOf(db: Db, reelId: string): void {
+  db.prepare("UPDATE karakeep_links SET state = 'ignored' WHERE reel_id = ? AND state = 'waiting'").run(reelId);
+}
+
 export const getMeta = (db: Db, key: string): string | null => (db.prepare("SELECT value FROM meta WHERE key = ?").get(key) as { value: string } | undefined)?.value ?? null;
 export const setMeta = (db: Db, key: string, value: string): void => { db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)").run(key, value); };

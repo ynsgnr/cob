@@ -9,6 +9,7 @@ Send a link to a short video, get back a page with the video (stored on disk), t
 ## Use
 - Open `/`, paste a link, press Archive. You land on `/k/<id>`, which refreshes until done.
 - `POST /api/reels {"url": "..."}` (`content-type: application/json`) returns `{id, url, status, created}`; `GET /api/reels/<id>` returns the reel as JSON. Resubmitting a known video returns the existing one.
+- On a video's page (internal address only): **Retry** resumes whatever failed; **Re-transcribe** throws the transcript away and redoes it (the platform's captions if it has them, else Whisper), which is the way to fix gaps or swap a Whisper transcript for captions; **Delete…** (then "Delete permanently") removes the entry and its downloaded video. Delete is refused while the video is being processed, and it does not touch a Karakeep bookmark that points to the page.
 - `/?q=text` searches title, caption, transcript, tags, author. `/?tag=pasta` filters by tag.
 - Pages used to live under `/r/<id>`; those links redirect to `/k/<id>`.
 
@@ -24,7 +25,7 @@ A `Dockerfile` is included (no build step; yt-dlp is pinned and checksum-verifie
 Every variable is documented in `.env.example`. The ones you usually need: `WYOMING_URL` (a [Wyoming](https://github.com/OHF-Voice/wyoming-faster-whisper) whisper server; unset = no transcription), `YTDLP_COOKIES_FILE` (Instagram usually needs it), `MEDIA_DIR`, `DATABASE_PATH`, and the Karakeep variables below.
 
 - **Instagram:** failures show on the page. "Wants a logged-in session" means export cookies from a throwaway account's browser session and set `YTDLP_COOKIES_FILE`; if that does not help, update yt-dlp.
-- **Transcript gaps:** if the whisper server keeps failing on a stretch of audio, that stretch shows as `[…]` in the transcript. Retry on the page re-runs it.
+- **Transcript gaps:** if the whisper server keeps failing on a stretch of audio, that stretch shows as `[…]` in the transcript. Re-transcribe on the page redoes it.
 - **Captions instead of Whisper:** if the video has subtitles in your language (`WHISPER_LANGUAGE`, default `en`), Cob uses them and skips Whisper: seconds instead of minutes, and no GPU. `SUBTITLES=auto` (default) takes human subtitles first, then YouTube's auto-generated captions in the video's original language; `manual` takes only human subtitles; `off` always uses Whisper. Auto-generated captions are rougher than Whisper (no punctuation, more mistakes) but fine for search, and the page says where each transcript came from. Auto-translated tracks are never used (YouTube throttles them). If the caption request fails, or there are none (Instagram has none), Cob transcribes with Whisper. A Retry after a failed transcript checks for captions again.
 - **YouTube:** yt-dlp runs with `--js-runtimes node` (Node is already there). Videos over 1 hour or 200 MB are refused, and downloads are capped at 720p (H.264/AAC). Playlists and channels are not matched; a `watch?v=…&list=…` link archives just that video. The cookies file is shared by all providers (yt-dlp only sends each site its own cookies); YouTube usually works without it.
 

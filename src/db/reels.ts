@@ -84,6 +84,16 @@ export function retry(db: Db, id: string): boolean {
   return Number(r.changes) > 0;
 }
 
+// Clears the transcript and queues the reel again; the pipeline then looks for captions first, then uses Whisper.
+export function retranscribe(db: Db, id: string): boolean {
+  const r = db.prepare("UPDATE reels SET status = 'queued', error = NULL, transcript = NULL, transcript_status = 'pending', transcript_error = NULL, transcript_source = NULL, updated_at = ? WHERE id = ? AND status IN ('done', 'failed')").run(now(), id);
+  return Number(r.changes) > 0;
+}
+
+export function deleteReel(db: Db, id: string): void {
+  db.prepare("DELETE FROM reels WHERE id = ?").run(id);
+}
+
 export function saveFetched(db: Db, id: string, m: FetchedMedia, videoPath: string): void {
   db.prepare("UPDATE reels SET title = ?, caption = ?, tags = ?, author = ?, duration_s = ?, video_path = ?, updated_at = ? WHERE id = ?").run(m.title, m.caption, JSON.stringify(m.tags), m.author, m.durationS, videoPath, now(), id);
 }

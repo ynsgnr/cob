@@ -16,6 +16,8 @@ form.row{display:flex;gap:.5rem}form.row input{flex:1}
 video{width:100%;max-height:75vh;background:#000;border-radius:4px}
 .muted{color:var(--muted)}.tags a{display:inline-block;padding:.75rem .5rem}
 .note{padding:.5rem .75rem;border-left:4px solid var(--caution);background:var(--caution-bg);margin:.5rem 0}
+.actions{display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-start;margin-top:1rem}summary{min-height:48px;display:flex;align-items:center;cursor:pointer;color:var(--muted)}
+button.danger{background:var(--warning);border-color:var(--warning);color:var(--on-accent)}
 .note.bad{border-color:var(--warning);background:var(--warning-bg)}
 .transcript{white-space:pre-wrap;margin:0}
 ul.list{list-style:none;padding:0}ul.list li a{display:block;padding:.75rem 0;border-top:1px solid var(--line);text-decoration:none;color:inherit}
@@ -39,6 +41,16 @@ ${tag ? `<p>Tag: #${esc(tag)} · <a href="/">clear</a></p>` : ""}
 
 const SOURCE_LABEL = { subtitles: "From the video's subtitles", "auto-captions": "From auto-generated captions", whisper: "Transcribed with Whisper" } as const;
 
+// Re-transcribe redoes a finished transcript (captions first, else Whisper); Retry resumes whatever failed.
+// Delete sits behind a <details> as a two-step confirm, since the page has no scripts.
+function actions(r: Reel): string {
+  const id = esc(r.id);
+  const redo = r.transcriptStatus === "done"
+    ? `<form method="post" action="/k/${id}/retranscribe"><button>Re-transcribe</button></form>`
+    : `<form method="post" action="/k/${id}/retry"><button>Retry</button></form>`;
+  return `<div class="actions">${redo}<details><summary>Delete…</summary><p class="muted">Removes this entry and the downloaded video. A Karakeep bookmark pointing here is not touched.</p><form method="post" action="/k/${id}/delete"><button class="danger">Delete permanently</button></form></details></div>`;
+}
+
 export function reelPage(r: Reel, full = true): string {
   const pending = r.status === "queued" || r.status === "running";
   const tags = r.tags.map((t) => `<a href="/?tag=${encodeURIComponent(t)}">#${esc(t)}</a>`).join(" ");
@@ -58,7 +70,7 @@ ${video}
 ${tags ? `<p class="tags">${tags}</p>` : ""}
 ${r.caption ? `<div class="card"><h2>Caption</h2><p class="transcript">${esc(r.caption)}</p></div>` : ""}
 <div class="card"><h2>Transcript</h2>${r.transcript && r.transcriptSource ? `<p class="muted">${SOURCE_LABEL[r.transcriptSource]}</p>` : ""}${transcript}</div>
-${full && !pending ? `<form method="post" action="/k/${esc(r.id)}/retry"><button>Retry</button></form>` : ""}`, pending);
+${full && !pending ? actions(r) : ""}`, pending);
 }
 
 export function notFoundPage(): string {

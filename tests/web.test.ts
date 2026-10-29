@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
-import { rmSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { after, before, test } from "node:test";
-import { insertOrGet } from "../src/db/reels.ts";
+import { addLink, linksIn } from "../src/db/karakeep.ts";
+import { getReel, insertOrGet } from "../src/db/reels.ts";
 import { processReel } from "../src/worker/pipeline.ts";
 import { createApp } from "../src/web/server.ts";
-import { makeDeps } from "./helpers.ts";
+import { fakeProvider, makeDeps } from "./helpers.ts";
 
 const deps = makeDeps();
 const server = createApp(deps);
@@ -97,4 +98,69 @@ test("browser POSTs: same-origin passes even when Origin is \"null\" (no-referre
   assert.equal((await post({ "sec-fetch-site": "same-site" })).status, 403);
   assert.equal((await post({ origin: "null" })).status, 403); // old browser, null origin: refuse
   assert.equal((await post({})).status, 303); // curl and scripts
+});
+
+const act = (id: string, action: string, headers: Record<string, string> = {}) =>
+  fetch(`${base}/k/${id}/${action}`, { method: "POST", redirect: "manual", headers });
+const addReel = (externalId: string) =>
+  insertOrGet(deps.db, { platform: "fake", externalId, originalUrl: `https://example.test/v/${externalId}`, canonicalUrl: `https://example.test/v/${externalId}` }).reel;
+
+test("Re-transcribe clears a finished transcript and redoes it with captions or Whisper; Retry shows only when something failed", async () => {
+  const reel = addReel("rt1");
+  await processReel(deps, reel.id);
+  let page = await (await fetch(`${base}/k/${reel.id}`)).text();
+  assert.match(page, /Re-transcribe/);
+  assert.doesNotMatch(page, />Retry</);
+
+  assert.equal((await act(reel.id, "retranscribe")).status, 303);
+  let r = getReel(deps.db, reel.id)!;
+  assert.deepEqual([r.status, r.transcript, r.transcriptStatus, r.transcriptSource], ["queued", null, "pending", null]);
+  assert.match(await (await fetch(`${base}/k/${reel.id}`)).text(), /Queued/); // no buttons while it is queued
+
+  fakeProvider.subs = { text: "captions found on the second try", auto: true };
+  try { await processReel(deps, reel.id); } finally { fakeProvider.subs = undefined; }
+  r = getReel(deps.db, reel.id)!;
+  assert.deepEqual([r.status, r.transcript, r.transcriptSource], ["done", "captions found on the second try", "auto-captions"]);
+
+  const failing = addReel("rt2");
+  await processReel({ ...deps, transcribe: async () => { throw new Error("down"); } }, failing.id);
+  page = await (await fetch(`${base}/k/${failing.id}`)).text();
+  assert.match(page, />Retry</);
+  assert.doesNotMatch(page, /Re-transcribe/);
+});
+
+test("Delete removes the entry and its video, only that reel's, and Karakeep will not queue it again", async () => {
+  const keep = addReel("keep1");
+  const gone = addReel("gone1");
+  await processReel(deps, keep.id);
+  await processReel(deps, gone.id);
+  addLink(deps.db, "bm-1", "waiting", gone.id);
+  const dir = (r: { externalId: string }) => `${deps.config.mediaDir}/fake/${r.externalId}`;
+  assert.ok(existsSync(dir(gone)));
+  assert.match(await (await fetch(`${base}/k/${gone.id}`)).text(), /Delete permanently/);
+
+  assert.equal((await act(gone.id, "delete", { origin: "https://evil.example", "sec-fetch-site": "cross-site" })).status, 403);
+  assert.ok(getReel(deps.db, gone.id)); // a cross-site POST deletes nothing
+
+  const res = await act(gone.id, "delete", { "sec-fetch-site": "same-origin" });
+  assert.equal(res.status, 303);
+  assert.equal(res.headers.get("location"), "/");
+  assert.equal(getReel(deps.db, gone.id), null);
+  assert.equal(existsSync(dir(gone)), false);
+  assert.ok(existsSync(dir(keep)) && getReel(deps.db, keep.id)); // the other reel is untouched
+  assert.equal((await fetch(`${base}/media/${gone.id}`)).status, 404);
+  assert.deepEqual(linksIn(deps.db, "ignored").map((l) => l.bookmarkId), ["bm-1"]);
+  assert.equal((await act(gone.id, "delete")).status, 303); // deleting again is harmless
+});
+
+test("Delete refuses a reel that is being processed, and a corrupted row cannot delete outside the media folder", async () => {
+  const busy = addReel("busy1");
+  await processReel(deps, busy.id);
+  deps.db.prepare("UPDATE reels SET status = 'running' WHERE id = ?").run(busy.id);
+  assert.equal((await act(busy.id, "delete")).status, 409);
+  assert.ok(getReel(deps.db, busy.id));
+
+  deps.db.prepare("INSERT INTO reels (id, platform, external_id, original_url, canonical_url, created_at, updated_at) VALUES ('bad1', 'fake', '../../outside', 'u', 'u', 't', 't')").run();
+  assert.equal((await act("bad1", "delete")).status, 500);
+  assert.ok(getReel(deps.db, "bad1")); // nothing was deleted
 });
