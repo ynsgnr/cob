@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: app}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: cob}}
+  template:
+    metadata: {labels: {app: cob}}
+    spec:
+      securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: app
+          image: node:24-bookworm
+          workingDir: /app
+          command:
+            - bash
+            - -c
+            - "until [ -f deploy/devspace/tools.sh ]; do sleep 2; done; bash deploy/devspace/tools.sh; exec node --watch src/main.ts"
+          ports: [{containerPort: 3000}]
+          env:
+            - {name: MEDIA_DIR, value: /data/media}
+            - {name: DATABASE_PATH, value: /data/cob.db}
+            - {name: YTDLP_BIN, value: /data/bin/yt-dlp}
+            - {name: FFMPEG_BIN, value: /data/bin/ffmpeg}
+            - {name: YTDLP_COOKIES_FILE, value: /cookies/cookies.txt}
+            - {name: WYOMING_URL, value: "tcp://wyoming-whisper:10300"}
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          volumeMounts:
+            - {name: src, mountPath: /app}
+            - {name: data, mountPath: /data}
+            - {name: cookies, mountPath: /cookies, readOnly: true}
+      volumes:
+        - {name: src, emptyDir: {}}
+        - {name: data, emptyDir: {}}
+        - {name: cookies, secret: {secretName: cob-cookies, optional: true}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: app}
+spec:
+  selector: {app: cob}
+  ports: [{port: 80, targetPort: 3000}]

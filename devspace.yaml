@@ -1,0 +1,31 @@
+# Live dev loop: `devspace dev` syncs the working tree into the pod, where `node --watch` restarts on edits.
+# Setup: README.md, "Devspace".
+version: v2beta1
+name: cob
+
+hooks:
+  - name: cookies
+    events: ["before:deploy"]
+    command: bash deploy/devspace/secrets.sh
+
+deployments:
+  app:
+    kubectl:
+      manifests:
+        - deploy/devspace/app.yaml
+
+dev:
+  app:
+    labelSelector:
+      app: cob
+    container: app
+    logs:
+      enabled: true
+    ports:
+      - port: "13000:3000"
+    sync:
+      - path: ./:/app
+        excludeFile: .gitignore
+        excludePaths:
+          - .git/
+        disableDownload: true

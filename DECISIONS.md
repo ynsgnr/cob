@@ -1,0 +1,22 @@
+# Decisions
+
+1. **Lean stack**: Node 24 built-ins only, no framework, ORM or build step. The app is one process with a handful of server-rendered pages; a framework, ORM and build step would be the most likely things to rot. Revisit if the UI outgrows plain HTML.
+2. **One process** runs web and worker. The queue is the `reels.status` column; one job at a time with `JOB_GAP_MS` between jobs. A crash leaves `running` rows, which are requeued at start.
+3. **Dedup key** is `(platform, external_id)`, computed by the provider from the URL. `original_url` keeps exactly what the user submitted (stored, not shown); pages link to the provider's clean `canonical_url`, with tracking params dropped.
+4. **Reel ids are opaque** random ids (`/k/<id>`), so URLs stay stable if a platform changes its id scheme.
+5. **Resumable steps**: a retry skips the download if the file exists and the transcript if it is done.
+6. **Transcript is optional**: no `WYOMING_URL` -> `skipped`; Wyoming/ffmpeg error -> `failed` with the message. The reel is still `done`.
+7. **Cookies** are copied to a temp file per yt-dlp run, because yt-dlp rewrites its cookie jar.
+8. **No auth in the app**: it relies on the proxy in front (a reverse proxy or auth layer). Form/API POSTs reject a mismatching `Origin`.
+9. **Search** is plain `LIKE` over title, caption, transcript, tags and author. Swap for FTS5 when the archive is big enough to feel slow.
+10. **Karakeep sync** (`src/integrations/karakeep.ts`): polling, not webhooks, so Karakeep needs no change. State per bookmark lives in `karakeep_links` (ignored, waiting, created, done) so every step is retryable and a delete failure never creates a second bookmark. Create comes before delete, so a crash never loses the link. Deleting the original is opt-in (`KARAKEEP_REPLACE=true`); by default Cob only adds its bookmark next to it. Our own bookmarks (URL under `PUBLIC_BASE_URL`) are ignored, which prevents loops. Known loss: tags, lists and flags of the original.
+11. **Integration switch** is `KARAKEEP_API_KEY`; with it set, `KARAKEEP_URL` and `PUBLIC_BASE_URL` are required and startup fails otherwise.
+12. **Public surface** is the proxy's job: only `GET /k/*` and `GET /media/*` need to be public for Karakeep. The app has no auth of its own (decision 8).
+13. **Limits**: 100 queued reels (429 beyond), URLs up to 2048 chars, search terms 100 chars, yt-dlp `--max-filesize 200M`, ffmpeg and yt-dlp time out after 5 min and run with a scrubbed environment (no app secrets). `POST /api/reels` requires `application/json`, so a cross-site form cannot reach it.
+14. **Errors**: pages show yt-dlp's last line (useful, no internal data); transcription errors are logged and the row stores a generic message, because the public `/k/<id>` page would otherwise show internal hostnames.
+15. **Karakeep scan** reads down to a cutoff that only advances after a complete scan (5 min margin), so a failed page never skips older bookmarks; each link is swapped independently.
+16. **YouTube** is one provider for videos and Shorts, since both share the 11-character id and dedup to one `watch?v=` link. Playlists and channels never match. All yt-dlp providers share `ytdlpFetch`: 720p H.264/AAC, 1 hour, 200 MB, Node as the JS runtime. A video that yt-dlp skips for size or length leaves no files, which is reported as "downloaded nothing".
+17. **Not yet**: comments, `/share/` links, image carousels, FTS.
+18. **Pages are `/k/<id>`** (k for kernel; one kernel per saved video, whatever the source). `/r/<id>` redirects there so earlier bookmarks keep working.
+19. **No login, on purpose**: a low-impact single-user service. The README tells operators to put it behind a proxy or auth layer and expose only `/k/*` and `/media/*`. All responses carry `X-Robots-Tag: noindex, nofollow`.
+20. **License**: AGPL-3.0-only.
