@@ -7,7 +7,7 @@
 5. **Resumable steps**: a retry skips the download if the file exists and the transcript if it is done.
 6. **Transcript is optional**: no `WYOMING_URL` -> `skipped`; Wyoming/ffmpeg error -> `failed` with the message. The reel is still `done`.
 7. **Cookies** are copied to a temp file per yt-dlp run, because yt-dlp rewrites its cookie jar.
-8. **No auth in the app**: it relies on the proxy in front (a reverse proxy or auth layer). Form/API POSTs reject a mismatching `Origin`.
+8. **No auth in the app**: it relies on the proxy in front (a reverse proxy or auth layer). POSTs are checked with `Sec-Fetch-Site` (must be same-origin), falling back to `Origin` vs `Host` for old browsers. `Origin` alone is not enough: `Referrer-Policy: no-referrer` makes browsers send `Origin: null` on same-origin POSTs.
 9. **Search** is plain `LIKE` over title, caption, transcript, tags and author. Swap for FTS5 when the archive is big enough to feel slow.
 10. **Karakeep sync** (`src/integrations/karakeep.ts`): polling, not webhooks, so Karakeep needs no change. State per bookmark lives in `karakeep_links` (ignored, waiting, created, done) so every step is retryable and a delete failure never creates a second bookmark. Create comes before delete, so a crash never loses the link. Deleting the original is opt-in (`KARAKEEP_REPLACE=true`); by default Cob only adds its bookmark next to it. Our own bookmarks (URL under `PUBLIC_BASE_URL`) are ignored, which prevents loops. Known loss: tags, lists and flags of the original.
 11. **Integration switch** is `KARAKEEP_API_KEY`; with it set, `KARAKEEP_URL` and `PUBLIC_BASE_URL` are required and startup fails otherwise.

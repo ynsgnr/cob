@@ -87,3 +87,14 @@ test("old /r/<id> links redirect to /k/<id>, and every response asks not to be i
   assert.equal(old.headers.get("x-robots-tag"), "noindex, nofollow");
   assert.equal((await fetch(`${base}/`)).headers.get("x-robots-tag"), "noindex, nofollow");
 });
+
+test("browser POSTs: same-origin passes even when Origin is \"null\" (no-referrer), cross-site and bare null are refused", async () => {
+  const post = (headers: Record<string, string>) => fetch(`${base}/k/doesnotexist1/retry`, { method: "POST", redirect: "manual", headers });
+  assert.equal((await post({ origin: "null", "sec-fetch-site": "same-origin" })).status, 303); // what a browser sends from a /k page
+  assert.equal((await post({ "sec-fetch-site": "same-origin", origin: "https://cob.example" })).status, 303); // proxy changed Host, browser says same-origin
+  assert.equal((await post({ "sec-fetch-site": "none" })).status, 303);
+  assert.equal((await post({ "sec-fetch-site": "cross-site", origin: base })).status, 403); // header wins over a matching Origin
+  assert.equal((await post({ "sec-fetch-site": "same-site" })).status, 403);
+  assert.equal((await post({ origin: "null" })).status, 403); // old browser, null origin: refuse
+  assert.equal((await post({})).status, 303); // curl and scripts
+});

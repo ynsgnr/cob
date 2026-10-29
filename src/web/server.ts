@@ -37,8 +37,12 @@ async function readBody(req: IncomingMessage): Promise<string> {
 const MAX_QUEUED = 100;
 const forbidden = (res: ServerResponse) => send(res, 403, layout("Forbidden", "<h1>Forbidden</h1>"));
 
-// Browsers send Origin on cross-site POSTs; reject any that is not this host.
+// CSRF: browsers label every request with Sec-Fetch-Site, even when Referrer-Policy: no-referrer turns Origin into
+// "null" on same-origin POSTs, and a proxy rewriting Host cannot break it. Without it (old browsers) fall back to
+// Origin vs Host. Requests with neither header are not from a browser.
 function sameOrigin(req: IncomingMessage): boolean {
+  const site = req.headers["sec-fetch-site"];
+  if (site) return site === "same-origin" || site === "none";
   const origin = req.headers.origin;
   if (!origin) return true;
   try {
