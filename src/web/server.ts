@@ -5,6 +5,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { extname } from "node:path";
 import { classify } from "../providers/index.ts";
 import { countQueued, getReel, insertOrGet, listReels, retry } from "../db/reels.ts";
+import { accessFor } from "../config.ts";
 import { mediaPath, type Deps } from "../worker/pipeline.ts";
 import { indexPage, layout, notFoundPage, reelPage } from "./views.ts";
 
@@ -35,6 +36,8 @@ async function readBody(req: IncomingMessage): Promise<string> {
 }
 
 const MAX_QUEUED = 100;
+// All that a "public" host (see accessFor) may fetch: video pages, old /r links, media and the health check.
+const PUBLIC_PATH = /^\/(?:healthz|(?:k|r|media)\/[A-Za-z0-9_-]+)$/;
 const forbidden = (res: ServerResponse) => send(res, 403, layout("Forbidden", "<h1>Forbidden</h1>"));
 
 // CSRF: browsers label every request with Sec-Fetch-Site, even when Referrer-Policy: no-referrer turns Origin into
@@ -79,6 +82,9 @@ async function handle(deps: Deps, req: IncomingMessage, res: ServerResponse) {
   const path = url.pathname;
   const post = req.method === "POST";
 
+  const full = accessFor(deps.config, req.headers.host) === "full";
+  if (!full && !(req.method === "GET" && PUBLIC_PATH.test(path))) return send(res, 404, notFoundPage());
+
   if (req.method === "GET" && path === "/healthz") return send(res, 200, "ok", "text/plain");
   if (req.method === "GET" && path === "/") {
     const q = (url.searchParams.get("q")?.trim() ?? "").slice(0, 100);
@@ -122,7 +128,7 @@ async function handle(deps: Deps, req: IncomingMessage, res: ServerResponse) {
       if (kind === "media") return serveMedia(deps, req, res, id);
       const reel = getReel(deps.db, id);
       if (!reel) return send(res, 404, notFoundPage());
-      return kind === "k" ? send(res, 200, reelPage(reel)) : json(res, 200, reel);
+      return kind === "k" ? send(res, 200, reelPage(reel, full)) : json(res, 200, reel);
     }
   }
   send(res, 404, notFoundPage());

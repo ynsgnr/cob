@@ -8,6 +8,8 @@ export interface Config {
   ffmpegBin: string;
   cookiesFile: string | null;
   jobGapMs: number;
+  publicHost: string | null;
+  internalHost: string | null;
   karakeep: { url: string; apiKey: string; publicBaseUrl: string; pollMs: number; backfill: boolean; replace: boolean } | null;
 }
 
@@ -19,6 +21,11 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     const n = Number(v);
     if (!Number.isInteger(n) || n < 0) throw new Error(`${k} must be a non-negative integer`);
     return n;
+  };
+  const hostname = (k: string) => {
+    const h = str(k)?.toLowerCase().replace(/^https?:\/\//, "").replace(/[:/].*$/, "") ?? null;
+    if (h !== null && !/^[a-z0-9.-]+$/.test(h)) throw new Error(`${k} must be a hostname`);
+    return h;
   };
   // The integration is on when KARAKEEP_API_KEY is set; it then needs the other two.
   const apiKey = str("KARAKEEP_API_KEY");
@@ -39,6 +46,17 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     ffmpegBin: str("FFMPEG_BIN") ?? "ffmpeg",
     cookiesFile: str("YTDLP_COOKIES_FILE"),
     jobGapMs: num("JOB_GAP_MS", 5000),
+    publicHost: hostname("PUBLIC_HOST"),
+    internalHost: hostname("INTERNAL_HOST"),
     karakeep,
   };
+}
+
+// "public" hosts may only read the per-video pages and media; "full" hosts may do everything.
+// INTERNAL_HOST set: only that host is full (everything else is treated as public, so unknown hosts fail closed).
+// Only PUBLIC_HOST set: that host is public, others are full. Neither: everything is full.
+export function accessFor(c: Pick<Config, "publicHost" | "internalHost">, hostHeader: string | undefined): "full" | "public" {
+  const host = (hostHeader ?? "").toLowerCase().replace(/:\d+$/, "");
+  if (c.internalHost) return host === c.internalHost ? "full" : "public";
+  return c.publicHost && host === c.publicHost ? "public" : "full";
 }

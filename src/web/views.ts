@@ -37,7 +37,7 @@ ${tag ? `<p>Tag: #${esc(tag)} · <a href="/">clear</a></p>` : ""}
 <ul class="list">${items || '<li class="muted">Nothing archived yet.</li>'}</ul>`);
 }
 
-export function reelPage(r: Reel): string {
+export function reelPage(r: Reel, full = true): string {
   const pending = r.status === "queued" || r.status === "running";
   const tags = r.tags.map((t) => `<a href="/?tag=${encodeURIComponent(t)}">#${esc(t)}</a>`).join(" ");
   const video = r.videoPath ? `<video controls playsinline preload="metadata" src="/media/${esc(r.id)}"></video>` : "";
@@ -47,7 +47,7 @@ export function reelPage(r: Reel): string {
   else if (r.transcriptStatus === "failed") transcript = `<p class="note bad">Transcription failed: ${esc(r.transcriptError)}</p>`;
   else if (r.transcriptStatus === "skipped") transcript = `<p class="note">Not transcribed: ${esc(r.transcriptError)}</p>`;
   else transcript = `<p class="muted">Waiting…</p>`;
-  return layout(r.title ?? "Saved", `<p><a href="/">← All saved</a></p>
+  return layout(r.title ?? "Saved", `${full ? '<p><a href="/">← All saved</a></p>' : ""}
 <h1>${esc(r.title ?? "Archiving…")}</h1>
 ${pending ? `<p class="note" role="status">${r.status === "queued" ? "Queued" : "Downloading"}… this page refreshes.</p>` : ""}
 ${r.status === "failed" ? `<p class="note bad" role="alert">Failed: ${esc(r.error)}</p>` : ""}
@@ -56,7 +56,7 @@ ${video}
 ${tags ? `<p class="tags">${tags}</p>` : ""}
 ${r.caption ? `<div class="card"><h2>Caption</h2><p class="transcript">${esc(r.caption)}</p></div>` : ""}
 <div class="card"><h2>Transcript</h2>${transcript}</div>
-${!pending ? `<form method="post" action="/k/${esc(r.id)}/retry"><button>Retry</button></form>` : ""}`, pending);
+${full && !pending ? `<form method="post" action="/k/${esc(r.id)}/retry"><button>Retry</button></form>` : ""}`, pending);
 }
 
 export function notFoundPage(): string {

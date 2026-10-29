@@ -2,7 +2,7 @@
 
 Send a link to a short video, get back a page with the video (stored on disk), title, tags and a Whisper transcript. Supports Instagram reels, YouTube videos and YouTube Shorts; other platforms plug in as providers. Built to feed [Karakeep](https://karakeep.app): save a link there and it becomes a searchable, offline copy. See `PLAN.md` for the roadmap and `DECISIONS.md` for why it is built this way.
 
-> **Read this before you deploy.** Cob has **no login, by design**: it is a small single-user service. Run it behind a reverse proxy or auth layer. The only paths that may be public are the per-video pages `GET /k/<id>` and `GET /media/<id>` (Karakeep needs those); everything else (`/`, `/submit`, `/api/*`, retry) lets whoever reaches it queue downloads on your disk, bandwidth and GPU, so keep it behind your login.
+> **Read this before you deploy.** Cob has **no login, by design**: it is a small single-user service. Run it behind a reverse proxy or auth layer. The only paths that may be public are the per-video pages `GET /k/<id>` and `GET /media/<id>` (Karakeep needs those); everything else (`/`, `/submit`, `/api/*`, retry) lets whoever reaches it queue downloads on your disk, bandwidth and GPU, so keep it behind your login. If you have a public and an internal address, `PUBLIC_HOST` / `INTERNAL_HOST` make Cob enforce that split itself (see below).
 >
 > **Personal archiving only.** Downloading from Instagram or YouTube goes against their terms, and the `/k/<id>` pages serve full copies of other people's videos to anyone holding the link. Cob sends `noindex` headers, but do not run a public instance that re-hosts content.
 
@@ -48,6 +48,19 @@ Setup: set `KARAKEEP_API_KEY` (Karakeep -> User Settings -> API Keys; a key with
 - This applies to every supported platform.
 - Turn off Karakeep's own video download (`CRAWLER_VIDEO_DOWNLOAD`) for Cob links; the page already has the video.
 - Karakeep's crawler must be able to open `PUBLIC_BASE_URL/k/<id>` without logging in (see the warning at the top).
+
+## Public and internal addresses
+If the same Cob is reachable under two names, say `cob.example.com` from the internet and `cob.home.example` from your network, tell Cob which is which:
+```
+PUBLIC_HOST=cob.example.com
+INTERNAL_HOST=cob.home.example
+```
+- A request whose `Host` is the **public** host may only `GET /k/<id>`, `GET /media/<id>` (and `/r/<id>`, which redirects, and `/healthz`). Everything else, including `/`, the API and Retry, is a plain `404`, and the video page hides the Retry button and the link to the list.
+- The **internal** host can do everything.
+- With `INTERNAL_HOST` set, any other `Host` (a pod IP, a typo, a guessed name) is treated as public, so it fails closed. With only `PUBLIC_HOST` set, other hosts are unrestricted. With neither set, nothing is restricted.
+- Use bare hostnames; a pasted URL is reduced to its hostname.
+
+This relies on the `Host` header, so your proxy must pass the original `Host` through, and **it is only as strong as the proxy's routing**: if the internal name can be reached from the internet (for example by sending `Host: <internal name>` to your public IP), anyone can claim to be internal. Make sure the internal route is only reachable from your network (a separate entrypoint, or an IP allowlist), and keep any login the proxy offers in front of it too.
 
 ## Add a platform
 Write `src/providers/<id>.ts` exporting a `Provider` (`match(url)` returns `{externalId, canonicalUrl}` or null, `fetch` downloads into a directory; for yt-dlp sites call `ytdlpFetch`), add it to `src/providers/index.ts`, add tests. Nothing else changes.
