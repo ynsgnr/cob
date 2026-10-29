@@ -37,6 +37,8 @@ ${tag ? `<p>Tag: #${esc(tag)} · <a href="/">clear</a></p>` : ""}
 <ul class="list">${items || '<li class="muted">Nothing archived yet.</li>'}</ul>`);
 }
 
+const SOURCE_LABEL = { subtitles: "From the video's subtitles", "auto-captions": "From auto-generated captions", whisper: "Transcribed with Whisper" } as const;
+
 export function reelPage(r: Reel, full = true): string {
   const pending = r.status === "queued" || r.status === "running";
   const tags = r.tags.map((t) => `<a href="/?tag=${encodeURIComponent(t)}">#${esc(t)}</a>`).join(" ");
@@ -55,7 +57,7 @@ ${video}
 <p class="muted">${esc(r.platform)}${r.author ? " · " + esc(r.author) : ""}${r.durationS ? ` · ${r.durationS} s` : ""} · <a href="${esc(r.canonicalUrl)}" rel="noreferrer noopener">original link</a></p>
 ${tags ? `<p class="tags">${tags}</p>` : ""}
 ${r.caption ? `<div class="card"><h2>Caption</h2><p class="transcript">${esc(r.caption)}</p></div>` : ""}
-<div class="card"><h2>Transcript</h2>${transcript}</div>
+<div class="card"><h2>Transcript</h2>${r.transcript && r.transcriptSource ? `<p class="muted">${SOURCE_LABEL[r.transcriptSource]}</p>` : ""}${transcript}</div>
 ${full && !pending ? `<form method="post" action="/k/${esc(r.id)}/retry"><button>Retry</button></form>` : ""}`, pending);
 }
 

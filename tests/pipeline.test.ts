@@ -31,7 +31,7 @@ test("pipeline downloads, stores metadata and transcript", async () => {
   assert.ok(existsSync(mediaPath(deps.config, r.videoPath!)));
 });
 
-test("transcription failure or no server never fails the reel, and retry resumes without re-downloading", async () => {
+test("transcription failure or no server never fails the reel, and a retry only redoes the transcript", async () => {
   const before = fakeProvider.calls;
   const deps = makeDeps({ transcribe: async () => { throw new Error("whisper down"); } });
   const { reel } = add(deps);
@@ -46,7 +46,7 @@ test("transcription failure or no server never fails the reel, and retry resumes
   await processReel(deps, reel.id);
   r = getReel(deps.db, reel.id)!;
   assert.equal(r.transcript, "now works");
-  assert.equal(fakeProvider.calls, before + 1);
+  assert.equal(fakeProvider.calls, before + 2); // asked again (yt-dlp skips the video it already has, so this is cheap)
 
   const none = makeDeps({ transcribe: null });
   await processReel(none, add(none).reel.id);
@@ -85,4 +85,49 @@ test("mediaPath refuses to leave MEDIA_DIR", () => {
   const deps = makeDeps();
   assert.throws(() => mediaPath(deps.config, "../etc/passwd"));
   assert.throws(() => mediaPath(deps.config, "/etc/passwd"));
+});
+
+test("captions from the platform replace transcribing, and say where they came from", async () => {
+  let transcribed = 0;
+  const deps = makeDeps({ transcribe: async () => { transcribed++; return "whisper text"; } });
+  fakeProvider.subs = { text: "caption text from the platform", auto: false };
+  try {
+    const { reel } = add(deps, "caps1");
+    await processReel(deps, reel.id);
+    const r = getReel(deps.db, reel.id)!;
+    assert.equal(r.status, "done");
+    assert.equal(r.transcript, "caption text from the platform");
+    assert.equal(r.transcriptSource, "subtitles");
+    assert.equal(transcribed, 0);
+
+    fakeProvider.subs = { text: "auto generated text", auto: true };
+    const auto = add(deps, "caps2").reel;
+    await processReel(deps, auto.id);
+    assert.equal(getReel(deps.db, auto.id)!.transcriptSource, "auto-captions");
+  } finally { fakeProvider.subs = undefined; }
+});
+
+test("without captions Whisper is used and labelled; a retry after a failed transcript re-checks for captions, a finished one does not", async () => {
+  const deps = makeDeps({ transcribe: async () => { throw new Error("down"); } });
+  const { reel } = add(deps, "caps3");
+  await processReel(deps, reel.id);
+  assert.equal(getReel(deps.db, reel.id)!.transcriptStatus, "failed");
+
+  const before = fakeProvider.calls;
+  fakeProvider.subs = { text: "captions appeared later", auto: true };
+  try {
+    retry(deps.db, reel.id);
+    await processReel(deps, reel.id);
+    assert.equal(fakeProvider.calls, before + 1); // fetched again, the platform may have captions now
+    assert.equal(getReel(deps.db, reel.id)!.transcript, "captions appeared later");
+
+    retry(deps.db, reel.id);
+    await processReel(deps, reel.id);
+    assert.equal(fakeProvider.calls, before + 1); // transcript is done: nothing is fetched again
+  } finally { fakeProvider.subs = undefined; }
+
+  const ok = makeDeps();
+  const w = add(ok, "caps4").reel;
+  await processReel(ok, w.id);
+  assert.equal(getReel(ok.db, w.id)!.transcriptSource, "whisper");
 });

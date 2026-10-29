@@ -38,10 +38,16 @@ CREATE TABLE IF NOT EXISTS karakeep_links (
 );
 `;
 
+// Append-only: entry i runs once on databases whose PRAGMA user_version is at most i. Never edit an old entry.
+const MIGRATIONS = ["ALTER TABLE reels ADD COLUMN transcript_source TEXT"];
+
 export function openDb(path: string): Db {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
   db.exec("PRAGMA journal_mode = WAL");
   db.exec(SCHEMA);
+  const applied = (db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
+  MIGRATIONS.slice(applied).forEach((sql) => db.exec(sql));
+  db.exec(`PRAGMA user_version = ${MIGRATIONS.length}`);
   return db;
 }

@@ -8,7 +8,7 @@ import { openDb } from "../src/db/index.ts";
 import type { Deps } from "../src/worker/pipeline.ts";
 
 // Matches example.test/v/<id> and "downloads" a tiny file; no network, no yt-dlp.
-export const fakeProvider: Provider & { calls: number } = {
+export const fakeProvider: Provider & { calls: number; subs?: { text: string; auto: boolean } } = {
   id: "fake",
   calls: 0,
   match(url) {
@@ -18,7 +18,7 @@ export const fakeProvider: Provider & { calls: number } = {
   async fetch(_url, dir) {
     this.calls++;
     await writeFile(join(dir, "video.mp4"), "0123456789");
-    return { title: "Fake title", caption: "cap #one #Two", tags: ["one", "two"], author: "someone", durationS: 12, videoFile: "video.mp4" };
+    return { title: "Fake title", caption: "cap #one #Two", tags: ["one", "two"], author: "someone", durationS: 12, videoFile: "video.mp4", subtitles: this.subs };
   },
 };
 

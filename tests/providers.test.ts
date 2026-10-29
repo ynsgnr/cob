@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { classify, providers } from "../src/providers/index.ts";
-import { hashtags, parseInfo } from "../src/providers/ytdlp.ts";
+import { hashtags, parseInfo, parseJson3, pickTrack } from "../src/providers/ytdlp.ts";
 
 test("instagram urls normalise to one id", () => {
   for (const u of [
@@ -82,4 +82,31 @@ test("youtube: playlists, channels, bad ids and look-alike hosts are rejected", 
 test("a youtube id that looks like a flag stays inside the https url handed to yt-dlp", () => {
   const hit = classify("https://youtu.be/--help-----", providers);
   assert.equal(hit?.ref.canonicalUrl, "https://www.youtube.com/watch?v=--help-----");
+});
+
+test("parseJson3 joins caption events, drops [tags] and repeated lines, ignores timing-only events", () => {
+  const raw = JSON.stringify({ events: [
+    { tStartMs: 0, dDurationMs: 1000 },
+    { segs: [{ utf8: "[Music]" }] },
+    { segs: [{ utf8: "hello " }, { utf8: "there" }] },
+    { segs: [{ utf8: "hello there" }] },
+    { segs: [{ utf8: "\n" }] },
+    { segs: [{ utf8: "second   line\nwraps" }, { utf8: " [Applause]" }] },
+  ] });
+  assert.equal(parseJson3(raw), "hello there second line wraps");
+  assert.equal(parseJson3("{}"), "");
+});
+
+test("pickTrack: human subtitles first, then the original auto track, never translations, nothing when off", () => {
+  const manual = { subtitles: { en: [{}], fr: [{}] }, automatic_captions: { en: [{}], "en-orig": [{}] } };
+  const autoOnly = { subtitles: {}, automatic_captions: { en: [{}], "en-orig": [{}], de: [{}] } };
+  const translationsOnly = { subtitles: {}, automatic_captions: { en: [{}], de: [{}] } }; // e.g. a French video offered in English
+  assert.deepEqual(pickTrack(manual, "auto", "en"), { lang: "en", auto: false });
+  assert.deepEqual(pickTrack(manual, "manual", "en"), { lang: "en", auto: false });
+  assert.deepEqual(pickTrack(autoOnly, "auto", "en"), { lang: "en-orig", auto: true });
+  assert.equal(pickTrack(autoOnly, "manual", "en"), null); // manual mode never takes auto captions
+  assert.equal(pickTrack(translationsOnly, "auto", "en"), null);
+  assert.equal(pickTrack(manual, "off", "en"), null);
+  assert.equal(pickTrack({}, "auto", "en"), null); // e.g. Instagram: no caption request at all
+  assert.deepEqual(pickTrack({ subtitles: {}, automatic_captions: { "de-orig": [{}] } }, "auto", "de"), { lang: "de-orig", auto: true });
 });

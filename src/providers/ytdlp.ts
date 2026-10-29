@@ -25,6 +25,41 @@ export function parseInfo(info: Record<string, unknown>): Omit<FetchedMedia, "vi
   return { title, caption, tags, author: s(info.uploader) || s(info.channel) || null, durationS: dur };
 }
 
+// YouTube's json3 captions: a list of events, each with text segments. Drops [Music]-style tags and repeated lines.
+export function parseJson3(raw: string): string {
+  const events = (JSON.parse(raw) as { events?: { segs?: { utf8?: string }[] }[] }).events ?? [];
+  const lines = events.map((e) => (e.segs ?? []).map((s) => s.utf8 ?? "").join("").replace(/\[[^\]]*\]/g, " ").replace(/\s+/g, " ").trim()).filter(Boolean);
+  return lines.filter((l, i) => l !== lines[i - 1]).join(" ");
+}
+
+// Which caption track to ask for, from the video's metadata: human subtitles in `lang`, else the original-language
+// auto track (`<lang>-orig`). Auto-translated tracks are never used: YouTube throttles them (HTTP 429) and they
+// are machine translations anyway. null = nothing worth asking for, so no request is made.
+export function pickTrack(info: Record<string, unknown>, mode: FetchContext["subtitles"], lang: string): { lang: string; auto: boolean } | null {
+  const has = (key: string, track: string) => Object.hasOwn((info[key] as object | undefined) ?? {}, track);
+  if (mode !== "off" && has("subtitles", lang)) return { lang, auto: false };
+  if (mode === "auto" && has("automatic_captions", `${lang}-orig`)) return { lang: `${lang}-orig`, auto: true };
+  return null;
+}
+
+// Captions are a bonus that saves transcribing, so any failure means "no captions", never a failed reel.
+async function fetchSubtitles(url: string, dir: string, ctx: FetchContext, info: Record<string, unknown>, cookieArgs: string[]): Promise<FetchedMedia["subtitles"]> {
+  const track = pickTrack(info, ctx.subtitles, ctx.subtitleLang);
+  if (!track) return undefined;
+  try {
+    const args = ["--skip-download", "--no-playlist", "--js-runtimes", "node", track.auto ? "--write-auto-subs" : "--write-subs", "--sub-langs", track.lang, "--sub-format", "json3", "-o", join(dir, "subs.%(ext)s"), ...cookieArgs, url];
+    await run(ctx.ytdlpBin, args, { timeout: 120_000, maxBuffer: 10_000_000, env: { PATH: process.env.PATH, HOME: process.env.HOME } });
+    const file = (await readdir(dir)).find((f) => f.startsWith("subs.") && f.endsWith(".json3"));
+    if (!file) return undefined;
+    const text = parseJson3(await readFile(join(dir, file), "utf8"));
+    await rm(join(dir, file), { force: true });
+    return text.length > 20 ? { text, auto: track.auto } : undefined;
+  } catch (e) {
+    console.error("captions unavailable, will transcribe:", String((e as { stderr?: unknown }).stderr ?? e).trim().split("\n").pop()?.slice(0, 160));
+    return undefined;
+  }
+}
+
 // Shared by every yt-dlp-backed provider: download `url` into `dir` as video.<ext> + video.info.json.
 export async function ytdlpFetch(url: string, dir: string, ctx: FetchContext): Promise<FetchedMedia> {
   // An empty or missing file (e.g. a placeholder Secret) means "no cookies", not an error.
@@ -39,10 +74,12 @@ export async function ytdlpFetch(url: string, dir: string, ctx: FetchContext): P
       "-S", "res:720,vcodec:h264,acodec:aac", "-f", "b[ext=mp4]/bv*+ba/b", "--merge-output-format", "mp4",
       "--ffmpeg-location", ctx.ffmpegBin, "-o", join(dir, "video.%(ext)s"),
     ];
+    const cookieArgs: string[] = [];
     if (tmp && cookies) {
       await copyFile(cookies, join(tmp, "cookies.txt"));
-      args.push("--cookies", join(tmp, "cookies.txt"));
+      cookieArgs.push("--cookies", join(tmp, "cookies.txt"));
     }
+    args.push(...cookieArgs);
     try {
       // env is scrubbed so the child never sees app secrets such as KARAKEEP_API_KEY
       await run(ctx.ytdlpBin, [...args, url], { timeout: 300_000, maxBuffer: 10_000_000, env: { PATH: process.env.PATH, HOME: process.env.HOME } });
@@ -58,7 +95,7 @@ export async function ytdlpFetch(url: string, dir: string, ctx: FetchContext): P
     const files = (await readdir(dir)).filter((f) => f.startsWith("video.") && !f.endsWith(".json"));
     const videoFile = files.find((f) => f === "video.mp4") ?? files[0]; // leftovers like video.f137.mp4 may exist
     if (!videoFile) throw new Error("yt-dlp produced no video file");
-    return { ...parseInfo(info), videoFile };
+    return { ...parseInfo(info), videoFile, subtitles: await fetchSubtitles(url, dir, ctx, info, cookieArgs) };
   } finally {
     if (tmp) await rm(tmp, { recursive: true, force: true });
   }

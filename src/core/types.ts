@@ -2,6 +2,8 @@
 
 export type ReelStatus = "queued" | "running" | "done" | "failed";
 export type TranscriptStatus = "pending" | "done" | "skipped" | "failed";
+export type TranscriptSource = "subtitles" | "auto-captions" | "whisper";
+export type SubtitleMode = "off" | "manual" | "auto";
 
 export interface Reel {
   id: string;
@@ -20,6 +22,7 @@ export interface Reel {
   transcript: string | null;
   transcriptStatus: TranscriptStatus;
   transcriptError: string | null;
+  transcriptSource: TranscriptSource | null;
 }
 
 export interface FetchedMedia {
@@ -29,12 +32,15 @@ export interface FetchedMedia {
   author: string | null;
   durationS: number | null;
   videoFile: string; // file name inside the directory handed to fetch()
+  subtitles?: { text: string; auto: boolean }; // the platform's own captions, when it has them: saves transcribing
 }
 
 export interface FetchContext {
   ytdlpBin: string;
   ffmpegBin: string;
   cookiesFile: string | null;
+  subtitles: SubtitleMode;
+  subtitleLang: string;
 }
 
 export interface ProviderRef {

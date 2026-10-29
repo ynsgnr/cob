@@ -8,6 +8,7 @@ export interface Config {
   ffmpegBin: string;
   cookiesFile: string | null;
   jobGapMs: number;
+  subtitles: "off" | "manual" | "auto";
   publicHost: string | null;
   internalHost: string | null;
   karakeep: { url: string; apiKey: string; publicBaseUrl: string; pollMs: number; backfill: boolean; replace: boolean } | null;
@@ -27,6 +28,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     if (h !== null && !/^[a-z0-9.-]+$/.test(h)) throw new Error(`${k} must be a hostname`);
     return h;
   };
+  const subtitles = str("SUBTITLES") ?? "auto";
+  if (subtitles !== "off" && subtitles !== "manual" && subtitles !== "auto") throw new Error("SUBTITLES must be off, manual or auto");
   // The integration is on when KARAKEEP_API_KEY is set; it then needs the other two.
   const apiKey = str("KARAKEEP_API_KEY");
   let karakeep: Config["karakeep"] = null;
@@ -46,6 +49,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     ffmpegBin: str("FFMPEG_BIN") ?? "ffmpeg",
     cookiesFile: str("YTDLP_COOKIES_FILE"),
     jobGapMs: num("JOB_GAP_MS", 5000),
+    subtitles,
     publicHost: hostname("PUBLIC_HOST"),
     internalHost: hostname("INTERNAL_HOST"),
     karakeep,

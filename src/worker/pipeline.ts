@@ -33,21 +33,28 @@ export async function processReel(deps: Deps, id: string): Promise<void> {
     const provider = deps.providers.find((p) => p.id === reel.platform);
     if (!provider) throw new Error(`no provider for ${reel.platform}`);
 
+    // Fetch when the video is missing, and again on a retry that still needs a transcript: yt-dlp skips a video it
+    // already has, so this is cheap, and it gives the platform's captions another chance.
     let rel = reel.videoPath;
-    if (!rel || !existsSync(mediaPath(config, rel))) {
+    let captioned = false;
+    if (!rel || !existsSync(mediaPath(config, rel)) || reel.transcriptStatus !== "done") {
       const dirRel = `${reel.platform}/${reel.externalId}`;
       const dir = mediaPath(config, dirRel);
       await mkdir(dir, { recursive: true });
-      const media = await provider.fetch(reel.canonicalUrl, dir, { ytdlpBin: config.ytdlpBin, ffmpegBin: config.ffmpegBin, cookiesFile: config.cookiesFile });
+      const media = await provider.fetch(reel.canonicalUrl, dir, { ytdlpBin: config.ytdlpBin, ffmpegBin: config.ffmpegBin, cookiesFile: config.cookiesFile, subtitles: config.subtitles, subtitleLang: config.whisperLanguage ?? "en" });
       rel = `${dirRel}/${media.videoFile}`;
       saveFetched(db, id, media, rel);
+      if (media.subtitles && reel.transcriptStatus !== "done") {
+        saveTranscript(db, id, "done", media.subtitles.text, null, media.subtitles.auto ? "auto-captions" : "subtitles");
+        captioned = true;
+      }
     }
 
-    if (reel.transcriptStatus !== "done") {
+    if (reel.transcriptStatus !== "done" && !captioned) {
       if (!deps.transcribe) saveTranscript(db, id, "skipped", null, "WYOMING_URL is not set");
       else {
         try {
-          saveTranscript(db, id, "done", await deps.transcribe(mediaPath(config, rel)), null);
+          saveTranscript(db, id, "done", await deps.transcribe(mediaPath(config, rel)), null, "whisper");
         } catch (e) {
           console.error(`transcription failed for ${id}:`, msg(e)); // detail stays in the log: it can name internal hosts
           saveTranscript(db, id, "failed", null, "transcription service error"); // the reel stays usable without a transcript

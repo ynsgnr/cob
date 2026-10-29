@@ -7,7 +7,7 @@ Spec of record: `src/core/types.ts` (Reel, Provider, FetchedMedia).
 - Provider (one per platform): `src/providers/<id>.ts` + a case in `tests/providers.test.ts`; register in `src/providers/index.ts`. yt-dlp-backed ones reuse `ytdlpFetch` from `src/providers/ytdlp.ts`.
 - Pipeline (fetch -> transcribe -> save, resumable per step): `src/worker/pipeline.ts`; queue loop: `src/worker/worker.ts`.
 - Transcription: `src/transcribe` (ffmpeg to PCM, Wyoming client).
-- DB: `src/db/index.ts` (schema, `CREATE IF NOT EXISTS`; the first schema change must add a `PRAGMA user_version` migration step), all queries in `src/db/reels.ts`.
+- DB: `src/db/index.ts` (schema, `CREATE IF NOT EXISTS`; schema changes are appended to `MIGRATIONS` (never edit an old entry; `user_version` tracks them)), all queries in `src/db/reels.ts`.
 - Web: `src/web/server.ts` (routes), `src/web/views.ts` (HTML; neutral colours, one accent, 48 px tap targets, light and dark).
 - Karakeep sync: `src/integrations/karakeep.ts` (client + `syncOnce`), state in `src/db/karakeep.ts`. Tests use an in-memory fake client.
 - Config: `src/config.ts` (env only). `.env.example` lists every variable.

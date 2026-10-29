@@ -22,6 +22,7 @@ function toReel(r: Row): Reel {
     transcript: r.transcript as string | null,
     transcriptStatus: r.transcript_status as Reel["transcriptStatus"],
     transcriptError: r.transcript_error as string | null,
+    transcriptSource: r.transcript_source as Reel["transcriptSource"],
   };
 }
 
@@ -87,8 +88,8 @@ export function saveFetched(db: Db, id: string, m: FetchedMedia, videoPath: stri
   db.prepare("UPDATE reels SET title = ?, caption = ?, tags = ?, author = ?, duration_s = ?, video_path = ?, updated_at = ? WHERE id = ?").run(m.title, m.caption, JSON.stringify(m.tags), m.author, m.durationS, videoPath, now(), id);
 }
 
-export function saveTranscript(db: Db, id: string, status: Reel["transcriptStatus"], text: string | null, error: string | null): void {
-  db.prepare("UPDATE reels SET transcript_status = ?, transcript = ?, transcript_error = ?, updated_at = ? WHERE id = ?").run(status, text, error, now(), id);
+export function saveTranscript(db: Db, id: string, status: Reel["transcriptStatus"], text: string | null, error: string | null, source: Reel["transcriptSource"] = null): void {
+  db.prepare("UPDATE reels SET transcript_status = ?, transcript = ?, transcript_error = ?, transcript_source = ?, updated_at = ? WHERE id = ?").run(status, text, error, source, now(), id);
 }
 
 export function finish(db: Db, id: string, status: "done" | "failed", error: string | null): void {
