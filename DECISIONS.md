@@ -19,4 +19,5 @@
 17. **Not yet**: comments, `/share/` links, image carousels, FTS.
 18. **Pages are `/k/<id>`** (k for kernel; one kernel per saved video, whatever the source). `/r/<id>` redirects there so earlier bookmarks keep working.
 19. **No login, on purpose**: a low-impact single-user service. The README tells operators to put it behind a proxy or auth layer and expose only `/k/*` and `/media/*`. All responses carry `X-Robots-Tag: noindex, nofollow`.
-20. **License**: AGPL-3.0-only.
+20. **Transcription is tolerant**: audio goes to Wyoming in 25 s pieces, each tried up to 6 times; failed pieces get up to two more passes after a 20 s pause. A piece that never works becomes a `[…]` gap, and the transcript fails only if more than a fifth of the pieces do. Reason: a shared GPU failed about one request in four, in bursts, which lost every 30+ minute transcript when one failure was fatal.
+21. **License**: AGPL-3.0-only.

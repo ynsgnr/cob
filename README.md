@@ -24,6 +24,7 @@ A `Dockerfile` is included (no build step; yt-dlp is pinned and checksum-verifie
 Every variable is documented in `.env.example`. The ones you usually need: `WYOMING_URL` (a [Wyoming](https://github.com/OHF-Voice/wyoming-faster-whisper) whisper server; unset = no transcription), `YTDLP_COOKIES_FILE` (Instagram usually needs it), `MEDIA_DIR`, `DATABASE_PATH`, and the Karakeep variables below.
 
 - **Instagram:** failures show on the page. "Wants a logged-in session" means export cookies from a throwaway account's browser session and set `YTDLP_COOKIES_FILE`; if that does not help, update yt-dlp.
+- **Transcript gaps:** if the whisper server keeps failing on a stretch of audio, that stretch shows as `[…]` in the transcript. Retry on the page re-runs it.
 - **YouTube:** yt-dlp runs with `--js-runtimes node` (Node is already there). Videos over 1 hour or 200 MB are refused, and downloads are capped at 720p (H.264/AAC). Playlists and channels are not matched; a `watch?v=…&list=…` link archives just that video. The cookies file is shared by all providers (yt-dlp only sends each site its own cookies); YouTube usually works without it.
 
 ## Karakeep integration (optional)
